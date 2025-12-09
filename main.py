@@ -61,7 +61,13 @@ st.sidebar.markdown("---")
 # Menu điều hướng
 page = st.sidebar.radio(
     "Chọn chức năng:",
-    ["🏠 Trang chủ", "📤 Upload & Transcribe", "🎙️ Ghi âm trực tiếp", "📊 Thống kê & Export"]
+    [
+        "🏠 Trang chủ", 
+        "📤 Upload & Transcribe", 
+        "🎙️ Ghi âm trực tiếp", 
+        "📊 Thống kê & Export",
+        "🖼️ Image Encryption"
+    ]
 )
 
 # Initialize session state
@@ -435,6 +441,123 @@ elif page == "📊 Thống kê & Export":
     else:
         st.info("ℹ️ Vui lòng transcribe audio trước để xem thống kê và export.")
 
+# ========== IMAGE ENCRYPTION PAGE ==========
+elif page == "🖼️ Image Encryption":
+    st.header("🖼️ Image Encryption (Password Protected)")
+
+    st.write("Mã hóa / giải mã ảnh bằng password, chaotic logistic map và patch-level XOR.")
+
+    import numpy as np
+    from PIL import Image
+    import hashlib
+    import io
+
+    # ===== KEY DERIVATION =====
+    def derive_keys(password: str):
+        h = hashlib.sha256(password.encode()).digest()
+        seed = (int.from_bytes(h[:4], "big") % 1_000_000) / 1_000_000
+        r = 3.8 + (h[4] / 255) * 0.19
+        patch_size = [8, 16, 32][h[-1] % 3]
+        xor_key = np.frombuffer(h, dtype=np.uint8)
+        return seed, r, patch_size, xor_key
+
+    # ===== CHAOTIC MAP =====
+    def logistic_map(seed, r, size):
+        x = seed
+        arr = np.zeros(size)
+        for i in range(size):
+            x = r * x * (1 - x)
+            arr[i] = x
+        return arr
+
+    # ===== PATCHIFY =====
+    def patchify(img, patch):
+        h, w, c = img.shape
+        assert h % patch == 0 and w % patch == 0
+        return (
+            img.reshape(h//patch, patch, w//patch, patch, c)
+               .swapaxes(1, 2)
+               .reshape(-1, patch, patch, c)
+        )
+
+    def unpatchify(patches, img_shape, patch):
+        h, w, c = img_shape
+        H, W = h//patch, w//patch
+        return (patches.reshape(H, W, patch, patch, c)
+                      .swapaxes(1, 2)
+                      .reshape(h, w, c))
+
+    # ===== ENCRYPT =====
+    def encrypt(img, password):
+        seed, r, patch, xor_key = derive_keys(password)
+        patches = patchify(img, patch)
+        N = len(patches)
+
+        chaos = logistic_map(seed, r, N)
+        perm = np.argsort(chaos)
+        chaos_vals = (chaos * 255).astype(np.uint8)
+
+        enc = []
+        for i in range(N):
+            p = patches[i].astype(np.uint8)
+            key = chaos_vals[i] ^ xor_key[i % len(xor_key)]
+            enc.append(p ^ key)
+
+        enc = np.stack(enc)[perm]
+        return unpatchify(enc, img.shape, patch)
+
+    # ===== DECRYPT =====
+    def decrypt(img, password):
+        seed, r, patch, xor_key = derive_keys(password)
+        patches = patchify(img, patch)
+        N = len(patches)
+
+        chaos = logistic_map(seed, r, N)
+        perm = np.argsort(chaos)
+        inv_perm = np.argsort(perm)
+        chaos_vals = (chaos * 255).astype(np.uint8)
+
+        dec = np.zeros_like(patches)
+        for i in range(N):
+            p = patches[inv_perm[i]].astype(np.uint8)
+            key = chaos_vals[i] ^ xor_key[i % len(xor_key)]
+            dec[i] = p ^ key
+
+        return unpatchify(dec, img.shape, patch)
+
+    # ===== UI =====
+
+    uploaded = st.file_uploader("Upload ảnh PNG/JPG", type=["png", "jpg", "jpeg"])
+    password = st.text_input("Nhập mật khẩu", type="password")
+    mode = st.selectbox("Chế độ:", ["Encrypt", "Decrypt"])
+
+    if uploaded:
+        img = Image.open(uploaded).convert("RGB")
+        img = img.resize((256, 256))
+        arr = np.array(img)
+
+        st.image(img, caption="Ảnh đầu vào", use_column_width=True)
+
+        if st.button("▶️ Run Encryption/Decryption"):
+            if not password:
+                st.error("Vui lòng nhập mật khẩu!")
+            else:
+                if mode == "Encrypt":
+                    out = encrypt(arr, password)
+                else:
+                    out = decrypt(arr, password)
+
+                st.image(out, caption="Ảnh output", use_column_width=True)
+
+                buffer = io.BytesIO()
+                Image.fromarray(out).save(buffer, format="PNG")
+
+                st.download_button(
+                    "⬇ Tải ảnh",
+                    buffer.getvalue(),
+                    "output.png",
+                    "image/png"
+                )
 # Footer
 st.markdown("---")
 st.caption("Vietnamese Speech to Text System | Made with Streamlit & Whisper")
