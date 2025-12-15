@@ -15,7 +15,13 @@ def load_whisper_model(model_size="base"):
         model = whisper.load_model(model_size, device=device)
         return model, device
     except Exception as e:
-        st.error(f"Lỗi khi load model: {str(e)}")
+        error_msg = str(e)
+        # Kiểm tra lỗi network
+        if "getaddrinfo failed" in error_msg or "urlopen error" in error_msg.lower():
+            st.error(f"❌ Lỗi kết nối mạng khi tải Whisper model. Vui lòng kiểm tra kết nối internet hoặc thử lại sau.")
+            st.info("💡 Whisper cần tải model từ internet lần đầu tiên. Model sẽ được cache sau khi tải thành công.")
+        else:
+            st.error(f"Lỗi khi load Whisper model: {error_msg}")
         return None, None
 
 def transcribe_audio(model, audio_path_or_array, sr=16000, language="vi", 

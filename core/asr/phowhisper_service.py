@@ -24,6 +24,21 @@ def load_phowhisper_model(model_size="small"):
         pipeline: Transformers pipeline object hoặc None nếu lỗi
     """
     try:
+        # Kiểm tra và cài đặt tf-keras nếu cần (fix Keras 3 compatibility)
+        try:
+            import tf_keras
+        except ImportError:
+            try:
+                import subprocess
+                import sys
+                st.warning("⚠️ Đang cài đặt tf-keras để tương thích với Keras 3...")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "tf-keras>=2.15.0", "-q"])
+                import tf_keras
+            except Exception as install_error:
+                st.error(f"❌ Không thể cài đặt tf-keras: {str(install_error)}")
+                st.info("💡 Vui lòng cài đặt thủ công: pip install tf-keras")
+                return None
+        
         device = 0 if torch.cuda.is_available() else -1
         model_name = f"vinai/PhoWhisper-{model_size}"
         
@@ -36,7 +51,12 @@ def load_phowhisper_model(model_size="small"):
         
         return transcriber
     except Exception as e:
-        st.error(f"Lỗi khi load PhoWhisper model: {str(e)}")
+        error_msg = str(e)
+        if "Keras" in error_msg or "tf-keras" in error_msg:
+            st.error(f"❌ Lỗi Keras compatibility: {error_msg}")
+            st.info("💡 Vui lòng cài đặt: pip install tf-keras")
+        else:
+            st.error(f"Lỗi khi load PhoWhisper model: {error_msg}")
         return None
 
 def transcribe_phowhisper(model, audio_path_or_array, sr=16000, language="vi"):
