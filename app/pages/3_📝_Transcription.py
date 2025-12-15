@@ -8,6 +8,7 @@ import sys
 import tempfile
 import soundfile as sf
 import torch
+import numpy as np
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -36,6 +37,7 @@ from core.asr.wav2letter_service import (
 from core.asr.kaldi_service import (
     load_kaldi_model, transcribe_kaldi, check_kaldi_available
 )
+from core.audio.audio_processor import chunk_signal, format_timestamp
 from app.components.sidebar import render_sidebar
 from app.components.layout import apply_custom_css
 
@@ -138,6 +140,14 @@ else:
         model_size = model_info["sizes"][0]  # Use default/only size
     
     with_timestamps = st.checkbox("Hiển thị timestamps", value=True)
+    enable_chunk = st.checkbox("Xử lý audio dài bằng chunking", value=True)
+    chunk_seconds = st.selectbox(
+        "Độ dài mỗi chunk (giây)",
+        [15, 30, 45, 60, 90, 120],
+        index=2,
+        help="Chia audio dài thành các đoạn nhỏ để tránh hết bộ nhớ",
+    )
+    auto_punct = st.checkbox("Tự động chèn dấu câu (đơn giản)", value=False)
     
     # Special handling for models that need additional config
     deepspeech_model_path = None
@@ -155,29 +165,66 @@ else:
                 with st.spinner(f"Đang transcribe với {model_info['name']}... (có thể mất vài phút)"):
                     result = None
                     model_obj = None
+                    transcripts = []
                     
-                    # Load and transcribe based on model type
+                    # Load và transcribe theo từng backend (có hỗ trợ chunk cho Whisper/PhoWhisper)
                     try:
+                        def transcribe_chunked_with_whisper(model_obj, language):
+                            ranges = chunk_signal(
+                                st.session_state.audio_data, st.session_state.audio_sr, int(chunk_seconds)
+                            ) if enable_chunk else [(0, len(st.session_state.audio_data))]
+                            progress = st.progress(0.0)
+                            for idx, (s0, s1) in enumerate(ranges, start=1):
+                                chunk_y = st.session_state.audio_data[s0:s1]
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                    sf.write(tmp_file.name, chunk_y, st.session_state.audio_sr)
+                                    chunk_res = transcribe_audio(
+                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr,
+                                        language=language, task="transcribe"
+                                    )
+                                try:
+                                    os.unlink(tmp_file.name)
+                                except:
+                                    pass
+                                if chunk_res and chunk_res.get("text"):
+                                    start_ts = format_timestamp(s0 / st.session_state.audio_sr)
+                                    end_ts = format_timestamp(s1 / st.session_state.audio_sr)
+                                    transcripts.append(f"[{start_ts} - {end_ts}] {chunk_res.get('text','').strip()}")
+                                progress.progress(idx / len(ranges))
+                            return {"text": "\n".join(transcripts), "segments": []}
+
+                        def transcribe_chunked_with_phowhisper(model_obj):
+                            ranges = chunk_signal(
+                                st.session_state.audio_data, st.session_state.audio_sr, int(chunk_seconds)
+                            ) if enable_chunk else [(0, len(st.session_state.audio_data))]
+                            progress = st.progress(0.0)
+                            for idx, (s0, s1) in enumerate(ranges, start=1):
+                                chunk_y = st.session_state.audio_data[s0:s1]
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                    sf.write(tmp_file.name, chunk_y, st.session_state.audio_sr)
+                                    chunk_res = transcribe_phowhisper(
+                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr, language="vi"
+                                    )
+                                try:
+                                    os.unlink(tmp_file.name)
+                                except:
+                                    pass
+                                if chunk_res and chunk_res.get("text"):
+                                    start_ts = format_timestamp(s0 / st.session_state.audio_sr)
+                                    end_ts = format_timestamp(s1 / st.session_state.audio_sr)
+                                    transcripts.append(f"[{start_ts} - {end_ts}] {chunk_res.get('text','').strip()}")
+                                progress.progress(idx / len(ranges))
+                            return {"text": "\n".join(transcripts), "segments": []}
+
                         if selected_model_id == "whisper":
                             model_obj, device = load_whisper_model(model_size)
                             if model_obj:
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-                                    sf.write(tmp_file.name, st.session_state.audio_data, st.session_state.audio_sr)
-                                    result = transcribe_audio(
-                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr,
-                                        language="vi", task="transcribe"
-                                    )
-                                    os.unlink(tmp_file.name)
+                                result = transcribe_chunked_with_whisper(model_obj, language="vi")
                         
                         elif selected_model_id == "phowhisper":
                             model_obj = load_phowhisper_model(model_size)
                             if model_obj:
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-                                    sf.write(tmp_file.name, st.session_state.audio_data, st.session_state.audio_sr)
-                                    result = transcribe_phowhisper(
-                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr, language="vi"
-                                    )
-                                    os.unlink(tmp_file.name)
+                                result = transcribe_chunked_with_phowhisper(model_obj)
                         
                         elif selected_model_id == "wav2vec2":
                             processor, model_obj = load_wav2vec2_model()
@@ -222,9 +269,19 @@ else:
                         
                         if result:
                             st.session_state.transcript_result = result
-                            st.session_state.transcript_text = format_transcript(
-                                result, with_timestamps=with_timestamps
-                            )
+                            text_out = result.get("text", "") if isinstance(result, dict) else ""
+                            if not text_out and hasattr(result, "text"):
+                                text_out = result.text
+                            if auto_punct:
+                                text_out = text_out.replace(" ,", ",").replace(" .", ".")
+                            if with_timestamps:
+                                st.session_state.transcript_text = text_out or format_transcript(
+                                    result, with_timestamps=True
+                                )
+                            else:
+                                st.session_state.transcript_text = text_out or format_transcript(
+                                    result, with_timestamps=False
+                                )
                             st.success("✅ Transcription hoàn tất!")
                             st.rerun()
                         elif model_obj is None:
@@ -258,3 +315,20 @@ else:
             st.session_state.transcript_text = edited_text
             st.success("✅ Đã lưu thay đổi!")
             st.rerun()
+
+        st.subheader("📊 Thống kê & Export")
+        words = st.session_state.transcript_text.split()
+        word_count = len(words)
+        duration = st.session_state.audio_info.get("duration") if st.session_state.audio_info else 0
+        wpm = (word_count / duration * 60) if duration else 0
+        col_stats = st.columns(3)
+        col_stats[0].metric("Số từ", f"{word_count}")
+        col_stats[1].metric("Thời lượng (s)", f"{duration:.2f}" if duration else "-")
+        col_stats[2].metric("WPM", f"{wpm:.1f}")
+
+        st.download_button(
+            "⬇️ Tải TXT",
+            data=st.session_state.transcript_text,
+            file_name="transcript.txt",
+            mime="text/plain",
+        )

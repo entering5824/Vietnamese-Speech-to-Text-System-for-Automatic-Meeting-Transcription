@@ -95,6 +95,16 @@ streamlit run app/main.py
 
 **Lưu ý:** Với cấu trúc mới, Streamlit sẽ tự động phát hiện các pages trong `app/pages/` và hiển thị trong sidebar navigation.
 
+### Chạy API (FastAPI):
+
+```bash
+uvicorn core.api.server:app --host 0.0.0.0 --port 8000
+```
+
+- Health check: `GET /health`
+- Upload audio: `POST /transcribe` (form-data: `file`, optional `diarization` bool)
+- Trả về JSON: `{ "text": "...", "language": "vi", "segments": [...] }`
+
 ### Sử dụng:
 
 1. **Upload & Transcribe:**
@@ -119,6 +129,11 @@ streamlit run app/main.py
    - Chọn tab "📊 Thống kê & Export"
    - Xem thống kê chi tiết
    - Export ra TXT, DOCX, hoặc PDF
+4. **Streaming (demo):**
+   - Trang `Streaming` dùng `audio_recorder_streamlit` (optional)
+   - Nếu chưa cài: `pip install audio-recorder-streamlit`
+5. **API Docs:**
+   - Trang `API Docs` mô tả endpoint FastAPI và ví dụ `curl`
 
 ## 🏗️ Cấu trúc dự án
 
