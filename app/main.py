@@ -28,12 +28,6 @@ from app.components.layout import apply_custom_css
 from app.components.footer import render_footer
 import runpy
 
-# Import internal pages for manual navigation
-from app.pages import Home as HomePage
-from app.pages import Analysis as AnalysisPage
-from app.pages import Training_Info as TrainingInfoPage
-
-
 def render_home():
     """Render the original home content."""
     st.markdown(
@@ -90,7 +84,7 @@ def main():
     # Apply custom CSS
     apply_custom_css()
 
-    # Render sidebar with logo and navigation (radio stored in session_state)
+    # Render sidebar with logo
     render_sidebar()
 
     # Initialize session state
@@ -104,8 +98,21 @@ def main():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    # Routing dựa trên lựa chọn trong sidebar
-    choice = st.session_state.get("nav_selection", "🏠 Home")
+    # Navigation radio (main-level to avoid page_link errors)
+    pages = [
+        "🏠 Home",
+        "📤 Upload & Record",
+        "🎧 Preprocessing",
+        "📝 Transcription",
+        "👥 Speaker Diarization",
+        "📊 Export & Statistics",
+        "🔬 ASR Benchmark",
+        "📊 Analysis (Single-file)",
+        "📚 Training Info",
+        "📡 Streaming",
+        "🧩 API Docs",
+    ]
+    choice = st.radio("🚀 Điều hướng", pages, index=0)
 
     fallback_map = {
         "🏠 Home": None,
@@ -123,10 +130,6 @@ def main():
 
     if choice == "🏠 Home":
         render_home()
-    elif choice == "📊 Analysis":
-        AnalysisPage.show()
-    elif choice == "📚 Training Info":
-        TrainingInfoPage.show()
     elif choice in fallback_map and fallback_map[choice]:
         runpy.run_path(fallback_map[choice])
 

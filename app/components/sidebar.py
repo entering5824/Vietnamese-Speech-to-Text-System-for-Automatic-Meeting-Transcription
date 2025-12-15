@@ -26,25 +26,8 @@ def render_sidebar(logo_width=110):
     st.sidebar.title("🎤 Vietnamese Speech to Text")
     st.sidebar.markdown("---")
     
-    # Radio menu điều hướng (đơn giản, tránh lỗi page_link)
-    pages = [
-        "🏠 Home",
-        "📤 Upload & Record",
-        "🎧 Preprocessing",
-        "📝 Transcription",
-        "👥 Speaker Diarization",
-        "📊 Export & Statistics",
-        "🔬 ASR Benchmark",
-        "📊 Analysis (Single-file)",
-        "📚 Training Info",
-        "📡 Streaming",
-        "🧩 API Docs",
-    ]
-    choice = st.sidebar.radio("🚀 Điều hướng", pages, index=0, key="nav_selection")
-    st.session_state["nav_selection"] = choice
-
     st.sidebar.markdown("""
     <div style="font-size: 0.9em; color: #666; padding: 10px 0;">
-    Dùng menu radio để chuyển trang. Chạy app: `streamlit run app/main.py`.
+    Chọn chức năng ở menu radio (hiển thị trong trang chính). Chạy app: `streamlit run app/main.py`.
     </div>
     """, unsafe_allow_html=True)
