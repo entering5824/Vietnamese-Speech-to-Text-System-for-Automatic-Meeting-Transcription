@@ -11,8 +11,24 @@ def simple_speaker_segmentation(audio_array, sr, segments, min_silence_duration=
     """
     Phân đoạn đơn giản dựa trên energy và silence
     Đây là phương pháp đơn giản, không phải diarization thực sự
+    
+    Args:
+        audio_array: Audio data (numpy array)
+        sr: Sample rate
+        segments: List of segments từ Whisper hoặc PhoWhisper
+        min_silence_duration: Minimum silence duration để phân tách speaker
+    
+    Returns:
+        List[Dict]: Speaker segments hoặc [] nếu không có segments hợp lệ
     """
     try:
+        # Kiểm tra nếu segments rỗng hoặc không hợp lệ
+        if not segments or len(segments) == 0:
+            return []
+        
+        # Kiểm tra format của segments
+        if not isinstance(segments[0], dict) or 'start' not in segments[0]:
+            return []
         # Tính energy
         frame_length = int(0.025 * sr)  # 25ms frames
         hop_length = int(0.010 * sr)    # 10ms hop

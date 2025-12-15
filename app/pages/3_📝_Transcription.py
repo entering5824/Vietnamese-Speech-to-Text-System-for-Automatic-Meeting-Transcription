@@ -1,0 +1,260 @@
+"""
+Transcription Page
+Hỗ trợ tất cả ASR models
+"""
+import streamlit as st
+import os
+import sys
+import tempfile
+import soundfile as sf
+import torch
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from core.asr.model_registry import (
+    get_all_models, get_model_info, check_model_dependencies, get_recommended_models
+)
+from core.asr.transcription_service import (
+    load_whisper_model, transcribe_audio, format_transcript
+)
+from core.asr.phowhisper_service import (
+    load_phowhisper_model, transcribe_phowhisper
+)
+from core.asr.wav2vec2_service import (
+    load_wav2vec2_model, transcribe_wav2vec2
+)
+from core.asr.deepspeech2_service import (
+    load_deepspeech2_model, transcribe_deepspeech2, check_deepspeech_available
+)
+from core.asr.quartznet_service import (
+    load_quartznet_model, transcribe_quartznet, check_nemo_available
+)
+from core.asr.wav2letter_service import (
+    load_wav2letter_model, transcribe_wav2letter, check_wav2letter_available
+)
+from core.asr.kaldi_service import (
+    load_kaldi_model, transcribe_kaldi, check_kaldi_available
+)
+from app.components.sidebar import render_sidebar
+from app.components.layout import apply_custom_css
+
+# Apply custom CSS
+apply_custom_css()
+
+# Render sidebar with logo
+render_sidebar()
+
+st.header("📝 Transcription")
+
+if st.session_state.audio_data is None:
+    st.warning("⚠️ Vui lòng upload audio file trước tại trang 'Upload & Record'")
+else:
+    # Get all models from registry
+    all_models = get_all_models()
+    recommended = get_recommended_models()
+    
+    # Model selection
+    st.subheader("🎯 Model Selection")
+    
+    # Group models by category for better UX
+    model_options = []
+    model_descriptions = {}
+    
+    for model_id, info in all_models.items():
+        name = info["name"]
+        category = info.get("category", "Other")
+        is_recommended = info.get("recommended", False)
+        vietnamese_support = info.get("vietnamese_support", False)
+        
+        # Check availability
+        is_available, missing_deps = check_model_dependencies(model_id)
+        
+        # Format display name
+        display_name = name
+        if is_recommended:
+            display_name += " 🌟"
+        if not vietnamese_support:
+            display_name += " (EN)"
+        if not is_available:
+            display_name += " ⚠️"
+        
+        model_options.append((model_id, display_name))
+        model_descriptions[model_id] = {
+            "description": info.get("description", ""),
+            "type": info.get("type", ""),
+            "category": category,
+            "is_available": is_available,
+            "missing_deps": missing_deps,
+            "vietnamese_support": vietnamese_support
+        }
+    
+    # Model selection dropdown
+    selected_model_id = st.selectbox(
+        "Chọn mô hình ASR:",
+        options=[opt[0] for opt in model_options],
+        format_func=lambda x: next(opt[1] for opt in model_options if opt[0] == x),
+        help="Chọn mô hình để transcribe audio"
+    )
+    
+    # Display model info
+    model_info = get_model_info(selected_model_id)
+    if model_info:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**Loại:** {model_info['type']}")
+            st.markdown(f"**Category:** {model_info['category']}")
+        with col2:
+            if model_info.get("recommended"):
+                st.success("🌟 Khuyến nghị cho tiếng Việt")
+            if not model_info.get("vietnamese_support"):
+                st.warning("⚠️ Chủ yếu cho tiếng Anh")
+        
+        st.info(f"💡 {model_info.get('description', '')}")
+        
+        # Check dependencies
+        is_available, missing_deps = check_model_dependencies(selected_model_id)
+        if not is_available:
+            st.error(f"❌ Model chưa sẵn sàng. Thiếu dependencies: {', '.join(missing_deps)}")
+            st.info(f"💡 Cài đặt: pip install {' '.join(missing_deps)}")
+    
+    # Model size selection (if applicable)
+    model_size = None
+    if model_info and model_info.get("sizes") and len(model_info["sizes"]) > 1:
+        default_idx = 0
+        if model_info.get("default_size"):
+            try:
+                default_idx = model_info["sizes"].index(model_info["default_size"])
+            except:
+                pass
+        
+        model_size = st.selectbox(
+            f"Chọn kích thước {model_info['name']}:",
+            model_info["sizes"],
+            index=default_idx,
+            help="Model lớn hơn thường chính xác hơn nhưng chậm hơn"
+        )
+    elif model_info and model_info.get("sizes"):
+        model_size = model_info["sizes"][0]  # Use default/only size
+    
+    with_timestamps = st.checkbox("Hiển thị timestamps", value=True)
+    
+    # Special handling for models that need additional config
+    deepspeech_model_path = None
+    if selected_model_id == "deepspeech2" and check_deepspeech_available():
+        st.info("💡 DeepSpeech cần model file (.pbmm). Tải từ: https://github.com/mozilla/DeepSpeech/releases")
+        deepspeech_model_path = st.text_input("DeepSpeech model path (.pbmm):", key="deepspeech_model_path", value="")
+        if deepspeech_model_path and not os.path.exists(deepspeech_model_path):
+            st.error(f"❌ Không tìm thấy file: {deepspeech_model_path}")
+    
+    if st.button("🚀 Bắt đầu Transcription", type="primary"):
+        if st.session_state.audio_data is not None:
+            if not is_available:
+                st.error("❌ Model chưa sẵn sàng. Vui lòng cài đặt dependencies trước.")
+            else:
+                with st.spinner(f"Đang transcribe với {model_info['name']}... (có thể mất vài phút)"):
+                    result = None
+                    model_obj = None
+                    
+                    # Load and transcribe based on model type
+                    try:
+                        if selected_model_id == "whisper":
+                            model_obj, device = load_whisper_model(model_size)
+                            if model_obj:
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                    sf.write(tmp_file.name, st.session_state.audio_data, st.session_state.audio_sr)
+                                    result = transcribe_audio(
+                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr,
+                                        language="vi", task="transcribe"
+                                    )
+                                    os.unlink(tmp_file.name)
+                        
+                        elif selected_model_id == "phowhisper":
+                            model_obj = load_phowhisper_model(model_size)
+                            if model_obj:
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                    sf.write(tmp_file.name, st.session_state.audio_data, st.session_state.audio_sr)
+                                    result = transcribe_phowhisper(
+                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr, language="vi"
+                                    )
+                                    os.unlink(tmp_file.name)
+                        
+                        elif selected_model_id == "wav2vec2":
+                            processor, model_obj = load_wav2vec2_model()
+                            if processor and model_obj:
+                                result = transcribe_wav2vec2(
+                                    processor, model_obj, st.session_state.audio_data, sr=st.session_state.audio_sr
+                                )
+                        
+                        elif selected_model_id == "deepspeech2":
+                            if check_deepspeech_available():
+                                if deepspeech_model_path and os.path.exists(deepspeech_model_path):
+                                    model_obj = load_deepspeech2_model(deepspeech_model_path)
+                                    if model_obj:
+                                        result = transcribe_deepspeech2(
+                                            model_obj, st.session_state.audio_data, sr=st.session_state.audio_sr
+                                        )
+                                    else:
+                                        st.error("❌ Không thể load DeepSpeech model!")
+                                else:
+                                    st.error("❌ Vui lòng cung cấp đường dẫn đến DeepSpeech model file (.pbmm)")
+                            else:
+                                st.error("❌ DeepSpeech chưa được cài đặt. Cài: pip install deepspeech")
+                        
+                        elif selected_model_id == "quartznet":
+                            if check_nemo_available():
+                                model_obj = load_quartznet_model()
+                                if model_obj:
+                                    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                        sf.write(tmp_file.name, st.session_state.audio_data, st.session_state.audio_sr)
+                                        result = transcribe_quartznet(
+                                            model_obj, tmp_file.name, sr=st.session_state.audio_sr
+                                        )
+                                        os.unlink(tmp_file.name)
+                            else:
+                                st.error("❌ NeMo toolkit chưa được cài đặt.")
+                        
+                        elif selected_model_id == "wav2letter":
+                            st.warning("⚠️ Wav2Letter++ chưa được tích hợp đầy đủ.")
+                        
+                        elif selected_model_id == "kaldi":
+                            st.warning("⚠️ Kaldi chưa được tích hợp đầy đủ.")
+                        
+                        if result:
+                            st.session_state.transcript_result = result
+                            st.session_state.transcript_text = format_transcript(
+                                result, with_timestamps=with_timestamps
+                            )
+                            st.success("✅ Transcription hoàn tất!")
+                            st.rerun()
+                        elif model_obj is None:
+                            st.error("❌ Không thể load model!")
+                    
+                    except Exception as e:
+                        st.error(f"❌ Lỗi khi transcribe: {str(e)}")
+        else:
+            st.warning("⚠️ Vui lòng upload file audio trước!")
+    
+    # Hiển thị transcript
+    if st.session_state.transcript_text:
+        st.subheader("📝 Transcript")
+        st.text_area(
+            "Kết quả transcription:",
+            st.session_state.transcript_text,
+            height=400,
+            key="transcript_display"
+        )
+        
+        # Edit transcript
+        st.subheader("✏️ Chỉnh sửa Transcript")
+        edited_text = st.text_area(
+            "Chỉnh sửa transcript:",
+            st.session_state.transcript_text,
+            height=300,
+            key="transcript_edit"
+        )
+        
+        if st.button("💾 Lưu thay đổi"):
+            st.session_state.transcript_text = edited_text
+            st.success("✅ Đã lưu thay đổi!")
+            st.rerun()

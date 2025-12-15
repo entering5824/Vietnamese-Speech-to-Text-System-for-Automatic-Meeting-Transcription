@@ -4,7 +4,7 @@ Vietnamese Speech to Text System for Automatic Meeting Transcription
 
 ## 📋 Mô tả
 
-Hệ thống chuyển đổi giọng nói tiếng Việt thành văn bản tự động, được xây dựng bằng Streamlit và OpenAI Whisper. Hệ thống hỗ trợ xử lý audio từ các cuộc họp, phỏng vấn, thuyết trình và chuyển đổi thành văn bản có cấu trúc.
+Hệ thống chuyển đổi giọng nói tiếng Việt thành văn bản tự động, được xây dựng bằng Streamlit với hỗ trợ cả OpenAI Whisper và PhoWhisper (VinAI Research). Hệ thống hỗ trợ xử lý audio từ các cuộc họp, phỏng vấn, thuyết trình và chuyển đổi thành văn bản có cấu trúc.
 
 ## ✨ Tính năng
 
@@ -12,7 +12,7 @@ Hệ thống chuyển đổi giọng nói tiếng Việt thành văn bản tự 
 - ✅ **Upload Audio**: Hỗ trợ các định dạng WAV, MP3, FLAC, M4A, OGG
 - ✅ **Visualization**: Hiển thị waveform và spectrogram
 - ✅ **Audio Preprocessing**: Normalize và loại bỏ noise
-- ✅ **Speech Recognition**: Sử dụng Whisper model để transcribe tiếng Việt
+- ✅ **Speech Recognition**: Hỗ trợ cả Whisper và PhoWhisper (tối ưu cho tiếng Việt) để transcribe
 - ✅ **Timestamps**: Hiển thị thời gian cho từng đoạn transcript
 - ✅ **Transcript Editing**: Cho phép chỉnh sửa transcript
 - ✅ **Export**: Xuất ra TXT, DOCX, PDF
@@ -21,7 +21,8 @@ Hệ thống chuyển đổi giọng nói tiếng Việt thành văn bản tự 
 ### Tính năng nâng cao:
 - ✅ **Speaker Diarization**: Phân biệt người nói (đơn giản)
 - ✅ **Long Audio Support**: Xử lý audio dài (meetings, interviews)
-- ✅ **Multiple Model Sizes**: Tùy chọn model từ tiny đến large
+- ✅ **Multiple Model Sizes**: Tùy chọn model từ tiny đến large (Whisper) hoặc small/medium/base (PhoWhisper)
+- ✅ **Model Selection**: Chọn giữa Whisper (đa ngôn ngữ) và PhoWhisper (tối ưu tiếng Việt)
 
 ## 🚀 Cài đặt
 
@@ -78,17 +79,21 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Lưu ý:** Lần đầu tiên chạy, Whisper sẽ tự động tải model về. Model "base" có kích thước khoảng 150MB.
+**Lưu ý:** 
+- Lần đầu tiên chạy, Whisper sẽ tự động tải model về. Model "base" có kích thước khoảng 150MB.
+- PhoWhisper models sẽ được tải từ HuggingFace lần đầu sử dụng (có thể mất vài phút tùy vào kích thước model).
 
 ## 📖 Hướng dẫn sử dụng
 
 ### Chạy ứng dụng:
 
 ```bash
-streamlit run main.py
+streamlit run app/main.py
 ```
 
 Ứng dụng sẽ mở tại `http://localhost:8501`
+
+**Lưu ý:** Với cấu trúc mới, Streamlit sẽ tự động phát hiện các pages trong `app/pages/` và hiển thị trong sidebar navigation.
 
 ### Sử dụng:
 
@@ -97,7 +102,10 @@ streamlit run main.py
    - Upload file audio (WAV, MP3, FLAC, etc.)
    - Xem waveform/spectrogram (tùy chọn)
    - Áp dụng preprocessing nếu cần
-   - Chọn model Whisper (tiny/base/small/medium/large)
+   - **Chọn loại model**: Whisper hoặc PhoWhisper (🌟 khuyến nghị cho tiếng Việt)
+   - Chọn kích thước model:
+     - Whisper: tiny/base/small/medium/large
+     - PhoWhisper: small/medium/base
    - Bấm "🚀 Bắt đầu Transcription"
    - Xem và chỉnh sửa transcript
    - Export nếu cần
@@ -116,45 +124,140 @@ streamlit run main.py
 
 ```
 .
-├── main.py                      # Ứng dụng Streamlit chính
-├── audio_processor.py           # Module xử lý audio
-├── transcription_service.py     # Module transcription với Whisper
-├── export_utils.py              # Module export (TXT, DOCX, PDF)
-├── speaker_diarization.py       # Module phân biệt người nói
-├── requirements.txt             # Dependencies
-└── README.md                    # File này
+├── app/                         # UI: Streamlit app
+│   ├── main.py                 # Home page / entry point
+│   ├── components/             # UI components
+│   │   ├── sidebar.py         # Shared sidebar với logo
+│   │   └── layout.py          # Layout utilities
+│   └── pages/                  # Streamlit pages
+│       ├── 1_📤_Upload_Record.py
+│       ├── 2_🎧_Preprocessing.py
+│       ├── 3_📝_Transcription.py
+│       ├── 4_👥_Speaker_Diarization.py
+│       ├── 5_📊_Export_Statistics.py
+│       └── 6_🔬_ASR_Benchmark.py
+├── core/                       # AI/ML logic
+│   ├── audio/
+│   │   ├── audio_processor.py
+│   │   └── ffmpeg_setup.py
+│   ├── asr/
+│   │   ├── transcription_service.py
+│   │   ├── phowhisper_service.py
+│   │   └── evaluate_models.py
+│   └── diarization/
+│       └── speaker_diarization.py
+├── export/
+│   └── export_utils.py
+├── assets/                      # logo, mẫu audio
+│   └── logo.webp
+├── docs/
+│   ├── de_bai.md
+│   ├── model_comparison.md
+│   └── architecture.md
+├── scripts/                     # công cụ hỗ trợ
+├── tests/                       # tests (sau này)
+├── requirements.txt
+├── README.md
+└── QUICKSTART.md
 ```
 
 ## 🔧 Công nghệ sử dụng
 
 - **Streamlit**: Framework web app
-- **OpenAI Whisper**: Speech recognition model
-- **Librosa**: Audio processing và analysis
-- **PyDub**: Audio format conversion
-- **SoundFile**: Audio I/O
-- **Matplotlib/Seaborn**: Visualization
-- **python-docx**: Export DOCX
-- **ReportLab**: Export PDF
-- **NumPy/SciPy**: Scientific computing
+- **ASR Models**:
+  - OpenAI Whisper (Transformer seq2seq)
+  - PhoWhisper (Whisper fine-tune) 🌟
+  - Wav2Vec 2.0 (Self-supervised)
+  - DeepSpeech 2 (CTC)
+  - QuartzNet/NeMo (CNN)
+  - Wav2Letter++ (CNN)
+  - Kaldi (HMM-GMM)
+- **Frameworks**:
+  - HuggingFace Transformers (PhoWhisper, Wav2Vec 2.0)
+  - NeMo Toolkit (QuartzNet)
+  - OpenAI Whisper API
+- **Audio Processing**: Librosa, PyDub, SoundFile
+- **Visualization**: Matplotlib, Seaborn
+- **Export**: python-docx, ReportLab
+- **Scientific Computing**: NumPy, SciPy
+- **Evaluation**: jiwer (WER/CER)
 
-## 📝 Model Whisper
+## 📝 Chọn mô hình
 
-Whisper có nhiều kích thước model:
+Hệ thống hỗ trợ **7 mô hình ASR** khác nhau:
 
-- **tiny**: ~39M parameters, nhanh nhất, độ chính xác thấp
-- **base**: ~74M parameters, cân bằng tốt (khuyến nghị)
-- **small**: ~244M parameters, chính xác hơn
-- **medium**: ~769M parameters, rất chính xác
-- **large**: ~1550M parameters, chính xác nhất, chậm nhất
+### 🌟 PhoWhisper (VinAI Research) - **Khuyến nghị cho tiếng Việt**
 
-Khuyến nghị sử dụng **base** hoặc **small** cho tiếng Việt.
+Mô hình được tinh chỉnh đặc biệt cho tiếng Việt, đạt hiệu suất tốt nhất:
+
+- **Type**: Whisper fine-tune
+- **Sizes**: small, medium, base
+- **Khuyến nghị**: medium (cân bằng tốt)
+- **Ưu điểm**: Tối ưu cho tiếng Việt, độ chính xác cao nhất
+
+### Whisper (OpenAI)
+
+Mô hình ASR đa ngôn ngữ, benchmark chuẩn:
+
+- **Type**: Transformer seq2seq
+- **Sizes**: tiny, base, small, medium, large
+- **Ưu điểm**: Hỗ trợ đa ngôn ngữ, dễ sử dụng
+- **Vietnamese support**: ✅ Có
+
+### Wav2Vec 2.0 (Facebook)
+
+Mô hình self-supervised learning, hiện đại:
+
+- **Type**: Transformer-based self-supervised
+- **Sizes**: base, large
+- **Ưu điểm**: Accuracy cao, hiện đại
+- **Vietnamese support**: ⚠️ Cần fine-tuned model
+
+### DeepSpeech 2 (Mozilla)
+
+Mô hình CTC cơ bản:
+
+- **Type**: CTC (Connectionist Temporal Classification)
+- **Ưu điểm**: Dễ hiểu về CTC và decoding
+- **Vietnamese support**: ⚠️ Cần model tiếng Việt
+- **Lưu ý**: Cần model file (.pbmm)
+
+### QuartzNet (NVIDIA NeMo)
+
+Mô hình CNN mạnh và nhẹ:
+
+- **Type**: CNN
+- **Sizes**: 15x5, 5x5
+- **Ưu điểm**: Mạnh và nhẹ nhất trong CNN-based
+- **Vietnamese support**: ⚠️ Cần model tiếng Việt
+
+### Wav2Letter++ (Facebook)
+
+Mô hình CNN tốc độ nhanh:
+
+- **Type**: CNN
+- **Ưu điểm**: Tốc độ nhanh, kiến trúc đơn giản
+- **Vietnamese support**: ⚠️ Cần model tiếng Việt
+- **Lưu ý**: Cần build từ source hoặc Docker
+
+### Kaldi (HMM-GMM)
+
+Mô hình truyền thống:
+
+- **Type**: HMM-GMM
+- **Ưu điểm**: Hiểu nền tảng ASR
+- **Vietnamese support**: ⚠️ Cần acoustic và language model
+- **Lưu ý**: Cần cài đặt Kaldi toolkit thủ công
+
+**Khuyến nghị chung**: Sử dụng **PhoWhisper-medium** cho audio tiếng Việt để đạt độ chính xác tốt nhất.
 
 ## ⚠️ Lưu ý
 
 1. **Thời gian xử lý**: Transcription có thể mất vài phút tùy vào độ dài audio và model size
-2. **Bộ nhớ**: Model lớn cần nhiều RAM (large model cần ~10GB RAM)
-3. **GPU**: Hỗ trợ GPU để tăng tốc (tự động phát hiện)
-4. **Internet**: Lần đầu cần internet để tải model
+2. **Bộ nhớ**: Model lớn cần nhiều RAM (Whisper-large cần ~10GB RAM, PhoWhisper-medium cần ~4-6GB RAM)
+3. **GPU**: Hỗ trợ GPU để tăng tốc (tự động phát hiện). PhoWhisper có thể chạy nhanh hơn trên GPU
+4. **Internet**: Lần đầu cần internet để tải model từ HuggingFace (PhoWhisper) hoặc OpenAI (Whisper)
+5. **PyTorch**: Nếu muốn sử dụng GPU, đảm bảo đã cài đặt PyTorch với CUDA support
 
 ## 🐛 Xử lý lỗi
 
@@ -169,7 +272,27 @@ Hệ thống tự động tải static FFmpeg. Nếu gặp lỗi:
 - Hoặc cài đặt FFmpeg thủ công và đảm bảo có trong PATH
 
 ### Lỗi "CUDA out of memory":
-Sử dụng model nhỏ hơn (tiny hoặc base) hoặc xử lý audio ngắn hơn.
+Sử dụng model nhỏ hơn (tiny hoặc base cho Whisper, small cho PhoWhisper) hoặc xử lý audio ngắn hơn.
+
+### Lỗi khi tải PhoWhisper từ HuggingFace:
+- Kiểm tra kết nối internet
+- Đảm bảo đã cài đặt `transformers` và `accelerate`
+- Thử lại sau vài phút (có thể do HuggingFace server tạm thời quá tải)
+
+## 📊 Đánh giá chất lượng mô hình
+
+Để so sánh chất lượng giữa Whisper và PhoWhisper, sử dụng script đánh giá:
+
+```bash
+python evaluate_models.py --test_dir test_audio --whisper_model large --phowhisper_model medium
+```
+
+Script sẽ:
+- Transcribe tất cả audio files trong thư mục `test_audio/`
+- Tính WER (Word Error Rate) và CER (Character Error Rate)
+- Tạo báo cáo chi tiết tại `docs/model_comparison.md`
+
+**Yêu cầu**: Mỗi audio file cần có file `.txt` tương ứng chứa reference text (ground truth).
 
 ## 📄 License
 
@@ -182,7 +305,9 @@ Developed for Vietnamese Speech to Text System Project
 ## 🙏 Acknowledgments
 
 - OpenAI Whisper team
+- VinAI Research (PhoWhisper)
 - Streamlit team
 - Librosa developers
+- HuggingFace team
 - Cộng đồng open source
 

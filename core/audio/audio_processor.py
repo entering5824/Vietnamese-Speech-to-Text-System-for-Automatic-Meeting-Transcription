@@ -12,7 +12,7 @@ import streamlit as st
 
 # Đảm bảo FFmpeg đã được setup (cho PyDub)
 try:
-    from ffmpeg_setup import ensure_ffmpeg
+    from .ffmpeg_setup import ensure_ffmpeg
     ensure_ffmpeg()
 except ImportError:
     # Nếu không có ffmpeg_setup, bỏ qua (có thể đã có FFmpeg trong system)
