@@ -9,6 +9,7 @@ import tempfile
 import soundfile as sf
 import torch
 import numpy as np
+import re
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -273,7 +274,15 @@ else:
                             if not text_out and hasattr(result, "text"):
                                 text_out = result.text
                             if auto_punct:
+                                # Cải thiện punctuation: thêm dấu câu cơ bản
                                 text_out = text_out.replace(" ,", ",").replace(" .", ".")
+                                # Thêm dấu chấm cuối câu nếu thiếu
+                                if text_out and text_out[-1] not in ".!?":
+                                    text_out += "."
+                                # Fix spacing around punctuation
+                                import re
+                                text_out = re.sub(r'\s+([,.!?;:])', r'\1', text_out)
+                                text_out = re.sub(r'([,.!?;:])\s*([,.!?;:])', r'\1\2', text_out)
                             if with_timestamps:
                                 st.session_state.transcript_text = text_out or format_transcript(
                                     result, with_timestamps=True
