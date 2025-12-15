@@ -39,7 +39,7 @@ MODELS: Dict[str, Dict] = {
         "description": "Mô hình self-supervised learning, hiện đại và accuracy cao",
         "recommended": False,
         "vietnamese_support": False,  # Cần fine-tuned model
-        "dependencies": ["transformers", "torch", "datasets"]
+        "dependencies": ["transformers", "torch"]  # Không cần datasets
     },
     "deepspeech2": {
         "name": "DeepSpeech 2",
@@ -143,10 +143,11 @@ def check_model_dependencies(model_id: str):
                 import deepspeech
             elif dep == "nemo-toolkit[asr]":
                 import nemo
-            elif dep == "datasets":
-                import datasets
+            # datasets đã được loại bỏ khỏi dependencies vì không cần thiết
+            # và có thể gây lỗi với Python 3.13
             # Add more dependency checks as needed
-        except ImportError:
+        except (ImportError, SyntaxError, IndentationError, AttributeError, Exception) as e:
+            # Bắt tất cả exception để tránh crash khi check dependencies
             missing.append(dep)
     
     return len(missing) == 0, missing

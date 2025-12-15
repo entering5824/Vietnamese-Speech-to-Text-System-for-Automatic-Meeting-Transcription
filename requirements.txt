@@ -19,7 +19,7 @@ transformers>=4.30.0
 accelerate>=0.20.0
 jiwer>=3.0.0
 # Wav2Vec 2.0 (đã có transformers)
-datasets>=2.0.0
+# datasets>=2.0.0  # Không cần thiết - wav2vec2 chỉ cần transformers/torch. Comment để tránh lỗi với Python 3.13
 # API/Streaming
 fastapi>=0.110.0
 uvicorn>=0.23.0
