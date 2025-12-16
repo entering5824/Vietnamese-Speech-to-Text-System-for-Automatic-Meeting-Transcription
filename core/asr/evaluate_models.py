@@ -7,9 +7,16 @@ import json
 import torch
 from pathlib import Path
 from typing import Dict, List, Tuple
+# Ensure FFmpeg configured before importing librosa (best-effort)
+try:
+    from core.audio.ffmpeg_setup import ensure_ffmpeg
+    ensure_ffmpeg(silent=True)
+except Exception:
+    pass
 import librosa
 import soundfile as sf
 import tempfile
+from core.audio.audio_processor import _make_safe_temp_copy
 
 # Import models
 # Note: Cần import trực tiếp whisper và transformers vì không có streamlit context
@@ -76,17 +83,27 @@ def evaluate_model_whisper(audio_path: str, model_size: str = "large") -> str:
     Returns:
         str: Transcribed text
     """
+    # Preflight checks to help diagnose WinError 2 (file not found) issues
     try:
+        if not os.path.exists(audio_path):
+            # Try creating a safe temp copy to avoid problems with odd filenames
+            try:
+                temp_copy = _make_safe_temp_copy(audio_path)
+                audio_path = temp_copy
+            except Exception as e:
+                print(f"❌ Audio path not found and could not create safe copy: {e}")
+                return ""
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = whisper.load_model(model_size, device=device)
-        
+
         result = model.transcribe(
             audio_path,
             language="vi",
             task="transcribe",
             fp16=False
         )
-        
+
         if result:
             return result.get("text", "")
         return ""
@@ -105,18 +122,28 @@ def evaluate_model_phowhisper(audio_path: str, model_size: str = "medium") -> st
     Returns:
         str: Transcribed text
     """
+    # Preflight checks to help diagnose WinError 2 (file not found) issues
     try:
+        if not os.path.exists(audio_path):
+            # Try creating a safe temp copy to avoid problems with odd filenames
+            try:
+                temp_copy = _make_safe_temp_copy(audio_path)
+                audio_path = temp_copy
+            except Exception as e:
+                print(f"❌ Audio path not found and could not create safe copy: {e}")
+                return ""
+
         device = 0 if torch.cuda.is_available() else -1
         model_name = f"vinai/PhoWhisper-{model_size}"
-        
+
         transcriber = pipeline(
             "automatic-speech-recognition",
             model=model_name,
             device=device
         )
-        
+
         result = transcriber(audio_path, return_timestamps=True)
-        
+
         if result:
             return result.get("text", "")
         return ""

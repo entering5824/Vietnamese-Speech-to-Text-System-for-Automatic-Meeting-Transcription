@@ -14,6 +14,10 @@ import re
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+# Setup FFmpeg trước khi import các module khác
+from core.audio.ffmpeg_setup import ensure_ffmpeg
+ensure_ffmpeg(silent=True)  # Setup FFmpeg tự động
+
 from core.asr.model_registry import (
     get_all_models, get_model_info, check_model_dependencies, get_recommended_models
 )
@@ -163,47 +167,77 @@ else:
                                 st.session_state.audio_data, st.session_state.audio_sr, int(chunk_seconds)
                             ) if enable_chunk else [(0, len(st.session_state.audio_data))]
                             progress = st.progress(0.0)
-                            for idx, (s0, s1) in enumerate(ranges, start=1):
-                                chunk_y = st.session_state.audio_data[s0:s1]
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-                                    sf.write(tmp_file.name, chunk_y, st.session_state.audio_sr)
+                            temp_files = []  # Track all temp files for cleanup
+                            try:
+                                for idx, (s0, s1) in enumerate(ranges, start=1):
+                                    chunk_y = st.session_state.audio_data[s0:s1]
+                                    # Create and close temp file first to avoid Windows file lock
+                                    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                        tmp_name = tmp_file.name
+                                    temp_files.append(tmp_name)  # Track for cleanup
+                                    sf.write(tmp_name, chunk_y, st.session_state.audio_sr)
                                     chunk_res = transcribe_audio(
-                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr,
+                                        model_obj, tmp_name, sr=st.session_state.audio_sr,
                                         language=language, task="transcribe"
                                     )
-                                try:
-                                    os.unlink(tmp_file.name)
-                                except:
-                                    pass
-                                if chunk_res and chunk_res.get("text"):
-                                    start_ts = format_timestamp(s0 / st.session_state.audio_sr)
-                                    end_ts = format_timestamp(s1 / st.session_state.audio_sr)
-                                    transcripts.append(f"[{start_ts} - {end_ts}] {chunk_res.get('text','').strip()}")
-                                progress.progress(idx / len(ranges))
-                            return {"text": "\n".join(transcripts), "segments": []}
+                                    # Clean up immediately after use
+                                    try:
+                                        os.unlink(tmp_name)
+                                        temp_files.remove(tmp_name)
+                                    except:
+                                        pass
+                                    if chunk_res and chunk_res.get("text"):
+                                        start_ts = format_timestamp(s0 / st.session_state.audio_sr)
+                                        end_ts = format_timestamp(s1 / st.session_state.audio_sr)
+                                        transcripts.append(f"[{start_ts} - {end_ts}] {chunk_res.get('text','').strip()}")
+                                    progress.progress(idx / len(ranges))
+                                return {"text": "\n".join(transcripts), "segments": []}
+                            finally:
+                                # Ensure all temp files are cleaned up even if there's an error
+                                for tmp_name in temp_files:
+                                    try:
+                                        if os.path.exists(tmp_name):
+                                            os.unlink(tmp_name)
+                                    except:
+                                        pass
 
                         def transcribe_chunked_with_phowhisper(model_obj):
                             ranges = chunk_signal(
                                 st.session_state.audio_data, st.session_state.audio_sr, int(chunk_seconds)
                             ) if enable_chunk else [(0, len(st.session_state.audio_data))]
                             progress = st.progress(0.0)
-                            for idx, (s0, s1) in enumerate(ranges, start=1):
-                                chunk_y = st.session_state.audio_data[s0:s1]
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-                                    sf.write(tmp_file.name, chunk_y, st.session_state.audio_sr)
+                            temp_files = []  # Track all temp files for cleanup
+                            try:
+                                for idx, (s0, s1) in enumerate(ranges, start=1):
+                                    chunk_y = st.session_state.audio_data[s0:s1]
+                                    # Create and close temp file first to avoid Windows file lock
+                                    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                        tmp_name = tmp_file.name
+                                    temp_files.append(tmp_name)  # Track for cleanup
+                                    sf.write(tmp_name, chunk_y, st.session_state.audio_sr)
                                     chunk_res = transcribe_phowhisper(
-                                        model_obj, tmp_file.name, sr=st.session_state.audio_sr, language="vi"
+                                        model_obj, tmp_name, sr=st.session_state.audio_sr, language="vi"
                                     )
-                                try:
-                                    os.unlink(tmp_file.name)
-                                except:
-                                    pass
-                                if chunk_res and chunk_res.get("text"):
-                                    start_ts = format_timestamp(s0 / st.session_state.audio_sr)
-                                    end_ts = format_timestamp(s1 / st.session_state.audio_sr)
-                                    transcripts.append(f"[{start_ts} - {end_ts}] {chunk_res.get('text','').strip()}")
-                                progress.progress(idx / len(ranges))
-                            return {"text": "\n".join(transcripts), "segments": []}
+                                    # Clean up immediately after use
+                                    try:
+                                        os.unlink(tmp_name)
+                                        temp_files.remove(tmp_name)
+                                    except:
+                                        pass
+                                    if chunk_res and chunk_res.get("text"):
+                                        start_ts = format_timestamp(s0 / st.session_state.audio_sr)
+                                        end_ts = format_timestamp(s1 / st.session_state.audio_sr)
+                                        transcripts.append(f"[{start_ts} - {end_ts}] {chunk_res.get('text','').strip()}")
+                                    progress.progress(idx / len(ranges))
+                                return {"text": "\n".join(transcripts), "segments": []}
+                            finally:
+                                # Ensure all temp files are cleaned up even if there's an error
+                                for tmp_name in temp_files:
+                                    try:
+                                        if os.path.exists(tmp_name):
+                                            os.unlink(tmp_name)
+                                    except:
+                                        pass
 
                         if selected_model_id == "whisper":
                             model_obj, device = load_whisper_model(model_size)
@@ -240,7 +274,7 @@ else:
                             else:
                                 st.session_state.transcript_text = text_out or format_transcript(
                                     result, with_timestamps=False
-                            )
+                                )
                             st.success("✅ Transcription hoàn tất!")
                             st.rerun()
                         elif model_obj is None:

@@ -84,6 +84,62 @@ pip install -r requirements.txt
 - Lần đầu tiên chạy, Whisper sẽ tự động tải model về. Model "base" có kích thước khoảng 150MB.
 - PhoWhisper models sẽ được tải từ HuggingFace lần đầu sử dụng (có thể mất vài phút tùy vào kích thước model).
 
+## 🚀 Deployment
+
+### Quick Start - Local Development
+
+**Cách nhanh nhất (khuyến nghị):**
+
+```bash
+# Linux/Mac
+chmod +x scripts/run_local.sh
+./scripts/run_local.sh
+
+# Windows
+scripts\run_local.bat
+```
+
+**Hoặc manual:**
+
+```bash
+# 1. Tạo virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# hoặc venv\Scripts\activate  # Windows
+
+# 2. Cài đặt dependencies
+pip install -r requirements.txt
+
+# 3. Chạy app
+streamlit run app/main.py
+```
+
+### Streamlit Cloud Deployment
+
+1. Push code lên GitHub
+2. Truy cập [share.streamlit.io](https://share.streamlit.io)
+3. Deploy với **Main file path**: `main.py`
+4. Xem chi tiết trong [DEPLOYMENT.md](DEPLOYMENT.md)
+
+### Docker Deployment
+
+```bash
+# Build image
+docker build -t vietnamese-stt:latest .
+
+# Chạy container
+docker run -d -p 8501:8501 --name vietnamese-stt vietnamese-stt:latest
+
+# Hoặc dùng docker-compose
+docker-compose up -d
+```
+
+Xem hướng dẫn chi tiết trong [DEPLOYMENT.md](DEPLOYMENT.md) cho:
+- Streamlit Cloud setup
+- Docker deployment
+- FastAPI server deployment
+- Troubleshooting
+
 ## 📖 Hướng dẫn sử dụng
 
 ### Chạy ứng dụng:

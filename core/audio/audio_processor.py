@@ -13,10 +13,35 @@ import streamlit as st
 import tempfile
 from typing import Tuple, List
 
+def validate_audio_format(file_extension: str) -> Tuple[bool, str]:
+    """
+    Validate audio format được hỗ trợ
+    
+    Args:
+        file_extension: Extension của file (ví dụ: 'mp3', 'wav')
+    
+    Returns:
+        Tuple (is_valid: bool, message: str)
+    """
+    supported_formats = ['wav', 'mp3', 'flac', 'm4a', 'ogg', 'wma', 'aac']
+    file_ext_lower = file_extension.lower().lstrip('.')
+    
+    if file_ext_lower in supported_formats:
+        return True, f"Format {file_ext_lower.upper()} được hỗ trợ"
+    else:
+        return False, f"Format {file_ext_lower.upper()} không được hỗ trợ. Các format được hỗ trợ: {', '.join(supported_formats).upper()}"
+
 def load_audio(file, sr=16000):
     """
     Load audio file và convert về format chuẩn
     Sử dụng librosa/soundfile thay vì pydub để tránh phụ thuộc ffprobe
+    
+    Args:
+        file: File object hoặc bytes
+        sr: Target sample rate (default 16kHz)
+    
+    Returns:
+        Tuple (audio_array: np.ndarray, sample_rate: int) hoặc (None, None) nếu lỗi
     """
     try:
         # Đọc audio file vào temporary file để librosa có thể xử lý
@@ -27,6 +52,23 @@ def load_audio(file, sr=16000):
             audio_bytes = file.read()
             file_extension = file.name.split('.')[-1].lower() if hasattr(file, 'name') else 'wav'
         
+        # Validate audio format
+        is_valid_format, format_msg = validate_audio_format(file_extension)
+        if not is_valid_format:
+            try:
+                st.warning(f"⚠️ {format_msg}")
+                st.info("💡 Đang thử convert tự động...")
+            except:
+                pass
+        
+        # Kiểm tra file không rỗng
+        if len(audio_bytes) == 0:
+            try:
+                st.error("❌ File audio rỗng! Vui lòng upload file hợp lệ.")
+            except:
+                pass
+            return None, None
+        
         # Tạo temporary file để librosa load
         # Librosa có thể load mp3, flac, ogg, m4a mà không cần pydub
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tmp_file:
@@ -36,7 +78,24 @@ def load_audio(file, sr=16000):
         try:
             # Sử dụng librosa để load - hỗ trợ nhiều format và tự động convert về mono
             y, sr_original = librosa.load(tmp_path, sr=sr, mono=True)
+            
+            # Validate audio data
+            if y is None or len(y) == 0:
+                try:
+                    st.error("❌ Không thể đọc được dữ liệu audio từ file. File có thể bị hỏng.")
+                except:
+                    pass
+                return None, None
+            
+            # Check sample rate
+            if sr_original != sr:
+                try:
+                    st.info(f"ℹ️ Audio được resample từ {sr_original}Hz về {sr}Hz")
+                except:
+                    pass
+            
         except Exception as librosa_error:
+            error_msg = str(librosa_error)
             # Nếu librosa không load được, thử soundfile
             try:
                 y, sr_original = sf.read(tmp_path)
@@ -46,9 +105,23 @@ def load_audio(file, sr=16000):
                 # Resample nếu cần
                 if sr_original != sr:
                     y = librosa.resample(y, orig_sr=sr_original, target_sr=sr)
+                
+                # Validate audio data
+                if y is None or len(y) == 0:
+                    try:
+                        st.error("❌ Không thể đọc được dữ liệu audio từ file. File có thể bị hỏng.")
+                    except:
+                        pass
+                    return None, None
             except Exception as sf_error:
-                st.error(f"Lỗi khi load audio với librosa: {str(librosa_error)}")
-                st.error(f"Lỗi khi load audio với soundfile: {str(sf_error)}")
+                try:
+                    st.error(f"❌ Lỗi khi load audio với librosa: {error_msg}")
+                    if "ffmpeg" in error_msg.lower():
+                        st.warning("💡 Lỗi có thể do FFmpeg chưa được cấu hình đúng. Vui lòng kiểm tra FFmpeg setup.")
+                    st.error(f"❌ Lỗi khi load audio với soundfile: {str(sf_error)}")
+                    st.info("💡 Vui lòng thử với file WAV hoặc MP3 chuẩn.")
+                except:
+                    pass
                 return None, None
         finally:
             # Xóa temporary file
@@ -59,7 +132,10 @@ def load_audio(file, sr=16000):
         
         return y, sr
     except Exception as e:
-        st.error(f"Lỗi khi load audio: {str(e)}")
+        try:
+            st.error(f"❌ Lỗi khi load audio: {str(e)}")
+        except:
+            pass
         return None, None
 
 def preprocess_audio(y, sr, normalize=True, remove_noise=False):
@@ -82,20 +158,58 @@ def preprocess_audio(y, sr, normalize=True, remove_noise=False):
 
 
 # === Convenience helpers ===
+def _make_safe_temp_copy(original_path: str) -> str:
+    """Create a temporary copy of a file's bytes to avoid problems with odd filenames.
+
+    This is used to avoid passing potentially problematic paths (e.g., trailing spaces)
+    to libraries that may invoke external tools.
+    Returns the path to the temp copy (must be deleted by caller).
+    """
+    with open(original_path, "rb") as src:
+        data = src.read()
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(original_path)[1])
+    tmp_name = tmp.name
+    tmp.close()
+    with open(tmp_name, "wb") as f:
+        f.write(data)
+    return tmp_name
+
+
 def normalize_audio_to_wav(audio_path: str, target_sr: int = 16000) -> Tuple[str, int, np.ndarray]:
     """
     Load audio -> mono 16kHz WAV PCM16, peak-normalized.
     Returns (normalized_wav_path, sr, samples)
-    """
-    y, sr = librosa.load(audio_path, sr=target_sr, mono=True)
-    peak = float(np.max(np.abs(y))) if y.size else 0.0
-    if peak > 0:
-        y = y / peak
 
-    out_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    out_wav.close()
-    sf.write(out_wav.name, y, target_sr, subtype="PCM_16")
-    return out_wav.name, target_sr, y
+    To avoid Windows "No such file" / WinError 2 issues when the original filename
+    is odd (e.g., trailing spaces) or when external tools have trouble with the
+    original path, create a safe temp copy and load from that copy.
+    """
+    temp_copy = None
+    try:
+        # If the path looks suspicious (e.g., ends with whitespace) or does not exist
+        # create a safe temp copy to read from.
+        if not os.path.exists(audio_path) or os.path.basename(audio_path).strip() != os.path.basename(audio_path):
+            temp_copy = _make_safe_temp_copy(audio_path)
+            load_path = temp_copy
+        else:
+            load_path = audio_path
+
+        y, sr = librosa.load(load_path, sr=target_sr, mono=True)
+        peak = float(np.max(np.abs(y))) if y.size else 0.0
+        if peak > 0:
+            y = y / peak
+
+        out_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        out_wav.close()
+        sf.write(out_wav.name, y, target_sr, subtype="PCM_16")
+        return out_wav.name, target_sr, y
+    finally:
+        if temp_copy and os.path.exists(temp_copy):
+            try:
+                os.unlink(temp_copy)
+            except Exception:
+                pass
 
 
 def apply_noise_reduction(y: np.ndarray, sr: int, cutoff: int = 80):

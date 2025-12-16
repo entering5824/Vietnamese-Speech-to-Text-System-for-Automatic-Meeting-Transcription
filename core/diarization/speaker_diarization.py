@@ -5,6 +5,12 @@ Sử dụng pyannote.audio hoặc phương pháp đơn giản hơn
 import streamlit as st
 import numpy as np
 from typing import List, Dict, Tuple
+# Ensure FFmpeg configured before importing librosa (best-effort)
+try:
+    from core.audio.ffmpeg_setup import ensure_ffmpeg
+    ensure_ffmpeg(silent=True)
+except Exception:
+    pass
 import librosa
 
 def simple_speaker_segmentation(audio_array, sr, segments, min_silence_duration=0.5):

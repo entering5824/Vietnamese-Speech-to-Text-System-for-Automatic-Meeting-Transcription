@@ -7,13 +7,18 @@ import os
 import sys
 import numpy as np
 import tempfile
+
+# Ensure FFmpeg is configured before importing librosa so backend detection can find ffmpeg
+# (This avoids errors like "ffmpeg was not found but is required to load audio files from filename")
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from core.audio.ffmpeg_setup import ensure_ffmpeg
+ensure_ffmpeg(silent=True)  # Setup FFmpeg tự động
+
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 import soundfile as sf
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from core.audio.audio_processor import plot_waveform, get_audio_info
 from core.asr.transcription_service import load_whisper_model, transcribe_audio, format_time

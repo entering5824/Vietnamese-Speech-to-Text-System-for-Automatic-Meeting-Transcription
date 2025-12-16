@@ -11,6 +11,10 @@ import soundfile as sf
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+# Setup FFmpeg trước khi import các module khác
+from core.audio.ffmpeg_setup import ensure_ffmpeg
+ensure_ffmpeg(silent=True)  # Setup FFmpeg tự động
+
 from app.components.sidebar import render_sidebar
 from app.components.layout import apply_custom_css
 from core.asr.transcription_service import load_whisper_model, transcribe_audio
@@ -43,11 +47,12 @@ else:
             st.audio(audio_bytes, format="audio/wav")
             with st.spinner("Đang nhận dạng..."):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    tmp_name = tmp.name
                     tmp.write(audio_bytes)
                     tmp.flush()
-                    result = transcribe_audio(model, tmp.name, sr=16000, language="vi")
+                result = transcribe_audio(model, tmp_name, sr=16000, language="vi")
                 try:
-                    os.unlink(tmp.name)
+                    os.unlink(tmp_name)
                 except:
                     pass
             if result and result.get("text"):

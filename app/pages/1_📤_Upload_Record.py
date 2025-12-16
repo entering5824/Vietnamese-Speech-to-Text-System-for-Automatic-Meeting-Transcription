@@ -8,7 +8,7 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from core.audio.audio_processor import load_audio, get_audio_info
+from core.audio.audio_processor import load_audio, get_audio_info, validate_audio_format
 from app.components.sidebar import render_sidebar
 from app.components.layout import apply_custom_css
 
@@ -35,6 +35,13 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
+    # Validate format before loading
+    file_extension = uploaded_file.name.split('.')[-1].lower() if hasattr(uploaded_file, 'name') else 'unknown'
+    is_valid, format_msg = validate_audio_format(file_extension)
+    
+    if not is_valid:
+        st.warning(f"⚠️ {format_msg}")
+    
     # Load audio
     with st.spinner("Đang tải audio..."):
         audio_data, sr = load_audio(uploaded_file)
@@ -75,7 +82,14 @@ audio_file = st.file_uploader(
 )
 
 if audio_file:
-    st.success("✅ Đã tải file audio thành công!")
+    # Validate format before loading
+    file_extension = audio_file.name.split('.')[-1].lower() if hasattr(audio_file, 'name') else 'unknown'
+    is_valid, format_msg = validate_audio_format(file_extension)
+    
+    if is_valid:
+        st.success("✅ Đã tải file audio thành công!")
+    else:
+        st.warning(f"⚠️ {format_msg}")
     
     # Play audio
     st.audio(audio_file, format='audio/wav')

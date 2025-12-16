@@ -76,9 +76,9 @@ Hệ thống Vietnamese Speech to Text được xây dựng với kiến trúc m
   - Format transcript với speaker labels
   - Xử lý fallback khi không có segments
 
-### 3. Export Layer (`export/`)
+### 3. Utils Layer (`core/utils/`)
 
-- **`export_utils.py`**:
+- **`export.py`**:
   - Export transcript ra TXT, DOCX, PDF
   - Format metadata
   - Generate download files
@@ -110,7 +110,7 @@ core/diarization/speaker_diarization.py
     ↓
 app/pages/5_Export_Statistics.py
     ↓
-export/export_utils.py
+core/utils/export.py
     ↓
 Download File
 ```
