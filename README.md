@@ -37,6 +37,18 @@ Hệ thống tự động tải và sử dụng portable FFmpeg thông qua thư 
 Không cần cài đặt thủ công - hoạt động trên Streamlit Cloud và môi trường local.
 FFmpeg được tự động cấu hình cho `pydub`, `moviepy`, và `whisper`.
 
+**Pages (Workflow Order)**
+
+Ứng dụng được tổ chức theo luồng công việc rõ ràng để hỗ trợ transcription project:
+
+1. **Home / Dashboard**
+2. **Audio Input & Preprocessing**
+3. **Transcription**
+4. **Speaker Diarization** (tùy chọn, bật bằng biến môi trường `DIARIZATION_ENABLED`)
+5. **Post-processing / AI Enhancement** (noise reduction, punctuation, grammar enhancement)
+6. **Export & Reporting**
+7. **Settings / Advanced** (chỉ hiển thị cho IT / Technical users: AI specialists, Admins)
+
 **Cài đặt thủ công (Tùy chọn):**
 Nếu muốn sử dụng system FFmpeg thay vì portable version:
 

@@ -36,7 +36,6 @@ st.set_page_config(
 
 from app.components.layout import apply_custom_css
 from app.components.footer import render_footer
-from app.components.sidebar import render_sidebar
 from core.auth.session import init_session
 
 # =========================
@@ -83,7 +82,6 @@ def main():
     init_session()
     
     apply_custom_css()
-    render_sidebar()
 
     # Initialize session state (legacy - now handled by init_session)
     for key, default in (

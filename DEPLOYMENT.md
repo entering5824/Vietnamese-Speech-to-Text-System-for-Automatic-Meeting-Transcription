@@ -52,6 +52,21 @@ Hướng dẫn chi tiết để triển khai Vietnamese Speech-to-Text System l�
   - Team tier: Có thể dùng model lớn hơn
 - **File upload**: Giới hạn 200MB mặc định (có thể điều chỉnh trong `.streamlit/config.toml`)
 
+### Pre-deployment cleanup
+
+To minimize repo size and avoid pushing development-only files to Cloud, you can run the provided cleanup script before deployment:
+
+```bash
+# Dry-run (recommended): show files that *would* be removed
+python scripts/prepare_deployment.py --dry-run
+
+# If the list looks correct, apply deletions (you will be asked to confirm)
+python scripts/prepare_deployment.py --apply
+```
+
+By default the script targets (conservative): `tests/`, `docs/`, `.github/workflows/`, notebooks (`*.ipynb`), `tests/artifacts/`, `temp/`, `build/`, `dist/`.
+You can override targets or keep docs/tests via flags. The script is conservative and will not remove core app files (app/, core/, requirements.txt, Dockerfile, etc.).
+
 ### Environment Variables (Secrets)
 
 Trong Streamlit Cloud Settings > Secrets, có thể thêm:

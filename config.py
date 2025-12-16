@@ -63,6 +63,9 @@ class Config:
     # Temporary Files
     TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", str(BASE_DIR / "temp")))
     CLEANUP_TEMP_FILES: bool = os.getenv("CLEANUP_TEMP_FILES", "true").lower() == "true"
+
+    # Features
+    DIARIZATION_ENABLED: bool = os.getenv("DIARIZATION_ENABLED", "false").lower() == "true"  # Optional speaker diarization page
     
     # Export Settings
     EXPORT_DIR: Path = Path(os.getenv("EXPORT_DIR", str(BASE_DIR / "export")))
