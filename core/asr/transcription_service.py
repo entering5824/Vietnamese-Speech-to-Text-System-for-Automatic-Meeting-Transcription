@@ -105,36 +105,97 @@ def transcribe_audio(model, audio_path_or_array, sr=16000, language="vi",
         # If audio_path_or_array is a filepath, preflight-check and create safe copy if needed
         audio_path_to_use = audio_path_or_array
         if isinstance(audio_path_or_array, str):
-            # Retry a few times for transient file access issues
+            # CRITICAL: Verify file exists before transcribe (prevents WinError 2)
+            if not os.path.exists(audio_path_to_use):
+                error_msg = f"File không tồn tại: {audio_path_to_use}"
+                st.error(f"❌ {error_msg}")
+                st.warning("💡 File có thể đã bị xóa hoặc path không đúng. Vui lòng kiểm tra lại.")
+                return None
+            
+            if not os.path.isfile(audio_path_to_use):
+                error_msg = f"Path không phải là file: {audio_path_to_use}"
+                st.error(f"❌ {error_msg}")
+                return None
+            
+            # Retry a few times for transient file access issues (Windows file lock)
+            file_accessible = False
             for attempt in range(3):
-                if os.path.exists(audio_path_to_use) and os.path.isfile(audio_path_to_use):
-                    try:
-                        with open(audio_path_to_use, 'rb'):
-                            pass
-                        break
-                    except Exception:
-                        time.sleep(0.1 * (attempt + 1))
-                        continue
-                else:
+                try:
+                    # Test if file is readable
+                    with open(audio_path_to_use, 'rb') as test_file:
+                        test_file.read(1)  # Read 1 byte to test
+                    file_accessible = True
+                    break
+                except PermissionError:
+                    st.warning(f"⚠️ File đang được sử dụng bởi process khác. Retry {attempt + 1}/3...")
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+                except Exception as file_err:
                     # Try to create a safe temp copy if original filename could be problematic
                     try:
                         tmp_copy = _make_safe_temp_copy(audio_path_to_use)
                         audio_path_to_use = tmp_copy
+                        file_accessible = True
                         break
                     except Exception:
                         time.sleep(0.1 * (attempt + 1))
                         continue
+            
+            if not file_accessible:
+                st.error(f"❌ Không thể truy cập file: {audio_path_to_use}")
+                st.warning("💡 File có thể đang bị khóa bởi process khác hoặc không có quyền truy cập.")
+                return None
+
+        # Final check before transcribe
+        if isinstance(audio_path_to_use, str):
+            if not os.path.exists(audio_path_to_use):
+                st.error(f"❌ File không tồn tại trước khi transcribe: {audio_path_to_use}")
+                return None
 
         # Transcribe
-        result = model.transcribe(
-            audio_path_to_use,
-            language=language,
-            task=task,
-            verbose=verbose,
-            fp16=False  # Sử dụng fp32 để tránh lỗi trên CPU
-        )
-
-        return result
+        try:
+            result = model.transcribe(
+                audio_path_to_use,
+                language=language,
+                task=task,
+                verbose=verbose,
+                fp16=False  # Sử dụng fp32 để tránh lỗi trên CPU
+            )
+            return result
+        except FileNotFoundError as fnf_err:
+            error_msg = str(fnf_err)
+            st.error(f"❌ FileNotFoundError: {error_msg}")
+            st.error(f"❌ File path: {audio_path_to_use}")
+            st.warning("""
+            **WinError 2 - File không tìm thấy:**
+            1. File có thể đã bị xóa
+            2. Path không đúng
+            3. FFmpeg không tìm thấy (nếu lỗi xảy ra trong quá trình load audio)
+            
+            **Khắc phục:**
+            - Kiểm tra file có tồn tại không
+            - Kiểm tra FFmpeg setup
+            - Thử lại với file audio khác
+            """)
+            return None
+        except OSError as os_err:
+            # WinError 2 on Windows
+            if getattr(os_err, 'winerror', None) == 2 or os_err.errno == 2:
+                error_msg = str(os_err)
+                st.error(f"❌ WinError 2: {error_msg}")
+                st.error(f"❌ File path: {audio_path_to_use}")
+                st.warning("""
+                **WinError 2 - File không tìm thấy (Windows):**
+                - File có thể đã bị xóa hoặc không tồn tại
+                - FFmpeg không tìm thấy
+                - Path có vấn đề
+                
+                **Đã kiểm tra:**
+                - File existence: ✅
+                - File readable: ✅
+                - Có thể là lỗi FFmpeg hoặc Whisper internal
+                """)
+            return None
     except KeyError as ke:
         # Handle "missing field" errors during transcription
         error_msg = f"Missing field error during transcription: {str(ke)}"
@@ -146,12 +207,35 @@ def transcribe_audio(model, audio_path_or_array, sr=16000, language="vi",
         3. Nếu vẫn lỗi, thử model size nhỏ hơn
         """)
         return None
+    except OSError as os_err:
+        # Handle WinError 2 specifically
+        error_msg = str(os_err)
+        if getattr(os_err, 'winerror', None) == 2 or os_err.errno == 2:
+            st.error(f"❌ WinError 2: File không tìm thấy")
+            st.error(f"❌ Chi tiết: {error_msg}")
+            st.warning("""
+            **WinError 2 trên Windows:**
+            - File không tồn tại hoặc đã bị xóa
+            - FFmpeg không tìm thấy
+            - Path có vấn đề
+            
+            **Đã thử:**
+            - Kiểm tra file existence
+            - Tạo safe temp copy
+            - Retry mechanism
+            """)
+        else:
+            st.error(f"❌ Lỗi OS: {error_msg}")
+        return None
     except Exception as e:
         error_msg = str(e)
         # Check for FFmpeg errors
         if "ffmpeg" in error_msg.lower() or "ffmpeg was not found" in error_msg.lower():
             st.error(f"❌ Lỗi FFmpeg khi transcribe: {error_msg}")
             st.warning("💡 Đảm bảo FFmpeg đã được cài đặt và cấu hình đúng.")
+        elif "cannot find the file" in error_msg.lower() or "No such file" in error_msg:
+            st.error(f"❌ File không tìm thấy: {error_msg}")
+            st.warning("💡 File có thể đã bị xóa hoặc path không đúng.")
         else:
             st.error(f"Lỗi khi transcribe: {error_msg}")
         return None

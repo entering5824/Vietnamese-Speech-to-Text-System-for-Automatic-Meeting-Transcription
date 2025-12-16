@@ -166,22 +166,48 @@ else:
                             for idx, (s0, s1) in enumerate(ranges, start=1):
                                 chunk_y = st.session_state.audio_data[s0:s1]
                                 
-                                # Create temp file
+                                # Create temp file - Windows-safe: create, close, then write
                                 with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
                                     tmp_name = tmp_file.name
                                 temp_files.append(tmp_name)
+                                
+                                # Write audio data
                                 sf.write(tmp_name, chunk_y, st.session_state.audio_sr)
                                 
+                                # CRITICAL: Verify file exists and is readable before transcribe
+                                if not os.path.exists(tmp_name):
+                                    st.error(f"❌ Temp file không tồn tại: {tmp_name}")
+                                    continue
+                                
+                                # Verify file is readable (Windows file lock check)
+                                try:
+                                    with open(tmp_name, 'rb') as test_file:
+                                        test_file.read(1)  # Try to read 1 byte
+                                except Exception as file_err:
+                                    st.error(f"❌ Không thể đọc temp file: {tmp_name}. Lỗi: {file_err}")
+                                    import time
+                                    time.sleep(0.1)  # Wait a bit and retry once
+                                    try:
+                                        with open(tmp_name, 'rb') as test_file2:
+                                            test_file2.read(1)
+                                    except:
+                                        st.error(f"❌ Vẫn không đọc được file sau retry. Có thể do Windows file lock.")
+                                        continue
+                                
+                                # Now safe to transcribe
                                 chunk_res = transcribe_audio(
                                     model_obj, tmp_name, sr=st.session_state.audio_sr,
                                     language=language, task="transcribe"
                                 )
                                 
-                                # Clean up immediately
+                                # Clean up immediately after use
                                 try:
-                                    os.unlink(tmp_name)
-                                    temp_files.remove(tmp_name)
-                                except:
+                                    if os.path.exists(tmp_name):
+                                        os.unlink(tmp_name)
+                                        if tmp_name in temp_files:
+                                            temp_files.remove(tmp_name)
+                                except Exception as cleanup_err:
+                                    # File might still be in use, will cleanup in finally
                                     pass
                                 
                                 if chunk_res and chunk_res.get("text"):
@@ -193,13 +219,19 @@ else:
                             
                             return {"text": "\n".join(transcripts), "segments": []}
                         finally:
-                            # Cleanup remaining temp files
+                            # Cleanup remaining temp files (with retry for Windows)
+                            import time
                             for tmp_name in temp_files:
-                                try:
-                                    if os.path.exists(tmp_name):
-                                        os.unlink(tmp_name)
-                                except:
-                                    pass
+                                for retry in range(3):
+                                    try:
+                                        if os.path.exists(tmp_name):
+                                            os.unlink(tmp_name)
+                                        break
+                                    except Exception:
+                                        if retry < 2:
+                                            time.sleep(0.2)
+                                        else:
+                                            st.warning(f"⚠️ Không thể xóa temp file: {tmp_name}")
                     
                     def transcribe_chunked_with_phowhisper(model_obj):
                         ranges = chunk_signal(
@@ -215,21 +247,47 @@ else:
                             for idx, (s0, s1) in enumerate(ranges, start=1):
                                 chunk_y = st.session_state.audio_data[s0:s1]
                                 
-                                # Create temp file
+                                # Create temp file - Windows-safe: create, close, then write
                                 with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
                                     tmp_name = tmp_file.name
                                 temp_files.append(tmp_name)
+                                
+                                # Write audio data
                                 sf.write(tmp_name, chunk_y, st.session_state.audio_sr)
                                 
+                                # CRITICAL: Verify file exists and is readable before transcribe
+                                if not os.path.exists(tmp_name):
+                                    st.error(f"❌ Temp file không tồn tại: {tmp_name}")
+                                    continue
+                                
+                                # Verify file is readable (Windows file lock check)
+                                try:
+                                    with open(tmp_name, 'rb') as test_file:
+                                        test_file.read(1)  # Try to read 1 byte
+                                except Exception as file_err:
+                                    st.error(f"❌ Không thể đọc temp file: {tmp_name}. Lỗi: {file_err}")
+                                    import time
+                                    time.sleep(0.1)  # Wait a bit and retry once
+                                    try:
+                                        with open(tmp_name, 'rb') as test_file2:
+                                            test_file2.read(1)
+                                    except:
+                                        st.error(f"❌ Vẫn không đọc được file sau retry. Có thể do Windows file lock.")
+                                        continue
+                                
+                                # Now safe to transcribe
                                 chunk_res = transcribe_phowhisper(
                                     model_obj, tmp_name, sr=st.session_state.audio_sr, language="vi"
                                 )
                                 
-                                # Clean up immediately
+                                # Clean up immediately after use
                                 try:
-                                    os.unlink(tmp_name)
-                                    temp_files.remove(tmp_name)
-                                except:
+                                    if os.path.exists(tmp_name):
+                                        os.unlink(tmp_name)
+                                        if tmp_name in temp_files:
+                                            temp_files.remove(tmp_name)
+                                except Exception as cleanup_err:
+                                    # File might still be in use, will cleanup in finally
                                     pass
                                 
                                 if chunk_res and chunk_res.get("text"):
@@ -241,13 +299,19 @@ else:
                             
                             return {"text": "\n".join(transcripts), "segments": []}
                         finally:
-                            # Cleanup remaining temp files
+                            # Cleanup remaining temp files (with retry for Windows)
+                            import time
                             for tmp_name in temp_files:
-                                try:
-                                    if os.path.exists(tmp_name):
-                                        os.unlink(tmp_name)
-                                except:
-                                    pass
+                                for retry in range(3):
+                                    try:
+                                        if os.path.exists(tmp_name):
+                                            os.unlink(tmp_name)
+                                        break
+                                    except Exception:
+                                        if retry < 2:
+                                            time.sleep(0.2)
+                                        else:
+                                            st.warning(f"⚠️ Không thể xóa temp file: {tmp_name}")
                     
                     # Load and transcribe
                     if selected_model_id == "whisper":
@@ -284,8 +348,57 @@ else:
                     elif model_obj is None:
                         st.error("❌ Không thể load model!")
                 
+                except OSError as os_err:
+                    # WinError 2 - File not found
+                    error_msg = str(os_err)
+                    if getattr(os_err, 'winerror', None) == 2 or os_err.errno == 2 or 'cannot find the file' in error_msg.lower():
+                        st.error("🔴 WINERROR 2: File không tìm thấy!")
+                        st.error(f"❌ {error_msg}")
+                        st.warning("""
+                        **Nguyên nhân thường gặp trên Windows:**
+                        1. **File tạm bị xóa trước khi model đọc** - Đã được xử lý trong code
+                        2. **FFmpeg không tìm thấy** - Kiểm tra FFmpeg setup
+                        3. **File path có ký tự đặc biệt** - Đã dùng temp file an toàn
+                        4. **Windows file lock** - Đã thêm retry mechanism
+                        
+                        **Khắc phục:**
+                        - Kiểm tra FFmpeg: Đảm bảo `imageio-ffmpeg` đã được cài
+                        - Restart ứng dụng
+                        - Thử với file audio khác
+                        """)
+                        with st.expander("🔍 Debug Info"):
+                            st.write("**FFmpeg Status:**")
+                            try:
+                                from core.audio.ffmpeg_setup import get_ffmpeg_info
+                                st.json(get_ffmpeg_info())
+                            except:
+                                st.write("Không thể lấy FFmpeg info")
+                            st.write("**Python Version:**", sys.version)
+                            st.write("**Platform:**", sys.platform)
+                    else:
+                        st.error(f"❌ Lỗi OS: {error_msg}")
+                        import traceback
+                        with st.expander("🔍 Chi tiết lỗi"):
+                            st.code(traceback.format_exc())
                 except Exception as e:
-                    st.error(f"❌ Lỗi khi transcribe: {str(e)}")
+                    error_msg = str(e)
+                    st.error(f"❌ Lỗi khi transcribe: {error_msg}")
+                    
+                    # Check for common Windows errors
+                    if "WinError 2" in error_msg or "cannot find the file" in error_msg.lower():
+                        st.error("🔴 WINERROR 2 PHÁT HIỆN!")
+                        st.warning("""
+                        **Đây là lỗi Windows phổ biến. Các nguyên nhân:**
+                        1. File không tồn tại hoặc đã bị xóa
+                        2. FFmpeg không tìm thấy
+                        3. Path có vấn đề
+                        
+                        **Đã thử:**
+                        - Tạo temp file an toàn
+                        - Kiểm tra file tồn tại trước khi transcribe
+                        - Retry mechanism cho file lock
+                        """)
+                    
                     import traceback
                     with st.expander("🔍 Chi tiết lỗi"):
                         st.code(traceback.format_exc())

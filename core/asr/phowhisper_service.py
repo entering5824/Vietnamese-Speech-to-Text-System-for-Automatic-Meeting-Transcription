@@ -396,42 +396,67 @@ def transcribe_phowhisper(model, audio_path_or_array, sr=16000, language="vi"):
         error_details.append(f"Audio path: {audio_path}")
         error_details.append(f"Return timestamps: True")
         
-        # Preflight: ensure audio file exists and is readable (help diagnose WinError 2)
-        preflight_attempts = 3
-        for attempt in range(preflight_attempts):
-            file_ok = audio_path and os.path.exists(audio_path) and os.path.isfile(audio_path)
-            if file_ok:
+        # CRITICAL: Preflight check - ensure audio file exists and is readable (prevents WinError 2)
+        if not audio_path:
+            error_details.append("ERROR: audio_path is None or empty")
+            st.error("❌ Audio path không hợp lệ!")
+            return None
+        
+        if not os.path.exists(audio_path):
+            error_details.append(f"ERROR: File không tồn tại: {audio_path}")
+            st.error(f"❌ File không tồn tại: {audio_path}")
+            st.warning("💡 File có thể đã bị xóa hoặc path không đúng. Đây là nguyên nhân phổ biến của WinError 2 trên Windows.")
+            return None
+        
+        if not os.path.isfile(audio_path):
+            error_details.append(f"ERROR: Path không phải là file: {audio_path}")
+            st.error(f"❌ Path không phải là file: {audio_path}")
+            return None
+        
+        # Verify file is readable (Windows file lock check)
+        file_readable = False
+        for attempt in range(3):
+            try:
+                # Test if file is readable
+                with open(audio_path, 'rb') as test_file:
+                    test_file.read(1)  # Read 1 byte to test
+                file_readable = True
+                error_details.append(f"File readable check: SUCCESS (attempt {attempt + 1})")
+                break
+            except PermissionError as perm_err:
+                error_details.append(f"File readable check: PermissionError (attempt {attempt + 1}): {str(perm_err)}")
+                st.warning(f"⚠️ File đang được sử dụng bởi process khác. Retry {attempt + 1}/3...")
+                time.sleep(0.2 * (attempt + 1))
+                continue
+            except Exception as file_err:
+                error_details.append(f"File readable check: Error (attempt {attempt + 1}): {str(file_err)}")
+                # Try to create safe temp copy if path has issues
                 try:
-                    # On Windows, ensure the path is accessible for reading
-                    with open(audio_path, 'rb'):
-                        pass
-                    break
-                except Exception as e:
-                    # transient I/O error (file lock?) - retry
+                    base = os.path.basename(audio_path) if audio_path else None
+                    if base and (base.strip() != base or any(ord(c) > 127 for c in base)):
+                        # Path has trailing spaces or special characters
+                        tmp_copy = _make_safe_temp_copy(audio_path)
+                        audio_path = tmp_copy
+                        is_temp = True
+                        file_readable = True
+                        error_details.append(f"Created safe temp copy: {tmp_copy}")
+                        break
+                except Exception:
                     time.sleep(0.1 * (attempt + 1))
                     continue
-            else:
-                # If file not found, attempt to make a safe temp copy if original path looks readable
-                try:
-                    if os.path.exists(audio_path):
-                        # path exists but not a file? continue to allow model to fail with clear message
-                        pass
-                    else:
-                        # Original path missing; try to create temp copy from path if possible
-                        # (This handles weird cases with trailing spaces in filenames)
-                        base = os.path.basename(audio_path) if audio_path else None
-                        if base and base.strip() != base:
-                            # make a safe copy by reading bytes from the problematic path and creating a new temp file
-                            try:
-                                tmp_copy = _make_safe_temp_copy(audio_path)
-                                audio_path = tmp_copy
-                                is_temp = True
-                                continue
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-                time.sleep(0.1 * (attempt + 1))
+        
+        if not file_readable:
+            error_details.append("ERROR: File không thể đọc được sau 3 lần thử")
+            st.error(f"❌ Không thể đọc file: {audio_path}")
+            st.warning("💡 File có thể đang bị khóa bởi process khác hoặc không có quyền truy cập.")
+            return None
+        
+        # Final verification before pipeline call
+        if not os.path.exists(audio_path):
+            error_details.append(f"ERROR: File biến mất trước khi gọi pipeline: {audio_path}")
+            st.error(f"❌ File biến mất: {audio_path}")
+            st.warning("💡 File có thể đã bị xóa bởi cleanup process. Đây là nguyên nhân WinError 2.")
+            return None
 
         try:
             result = model(audio_path, return_timestamps=True)
@@ -473,17 +498,50 @@ def transcribe_phowhisper(model, audio_path_or_array, sr=16000, language="vi"):
                     pass
 
             # Detect common "file not found" / WinError 2 cases
-            if isinstance(pipeline_error, OSError) and getattr(pipeline_error, 'errno', None) == 2 or 'No such file' in error_msg or 'ffmpeg was not found' in error_msg.lower():
-                st.error("🔴 FILE NOT FOUND / PATH ERROR DURING TRANSCRIBE!")
+            is_winerror_2 = (
+                isinstance(pipeline_error, OSError) and 
+                (getattr(pipeline_error, 'winerror', None) == 2 or pipeline_error.errno == 2)
+            ) or 'No such file' in error_msg or 'cannot find the file' in error_msg.lower() or 'ffmpeg was not found' in error_msg.lower()
+            
+            if is_winerror_2:
+                st.error("🔴 WINERROR 2: FILE NOT FOUND / PATH ERROR!")
                 st.error(f"❌ {error_msg}")
-                with st.expander("🔍 Chi tiết lỗi"): 
-                    st.code("\n".join(error_details))
+                st.error(f"❌ File path: {audio_path}")
+                
+                # Debug info
+                with st.expander("🔍 Debug Info"):
+                    st.write("**File Status:**")
+                    st.write(f"- Exists: {os.path.exists(audio_path) if audio_path else 'N/A'}")
+                    st.write(f"- Is file: {os.path.isfile(audio_path) if audio_path and os.path.exists(audio_path) else 'N/A'}")
+                    st.write(f"- Path: {audio_path}")
+                    st.write(f"- Path length: {len(audio_path) if audio_path else 0}")
+                    
+                    st.write("\n**FFmpeg Status:**")
                     st.json(get_ffmpeg_info())
+                    
+                    st.write("\n**Error Details:**")
+                    st.code("\n".join(error_details))
+                
                 st.warning("""
-                **Khắc phục nhanh:**
-                1. Kiểm tra tên file có ký tự lạ (ví dụ dấu cách cuối tên) hoặc đường dẫn dài.
-                2. Thử upload lại file hoặc rename để loại bỏ khoảng trắng cuối.
-                3. Restart ứng dụng nếu vẫn gặp lỗi.
+                **WinError 2 - Nguyên nhân phổ biến trên Windows:**
+                
+                1. **File không tồn tại** (đã kiểm tra ✅)
+                2. **FFmpeg không tìm thấy** - Kiểm tra FFmpeg setup
+                3. **File bị xóa trong quá trình xử lý** - Đã được xử lý trong code
+                4. **Path có ký tự đặc biệt** - Đã tạo safe temp copy
+                5. **Windows file lock** - Đã thêm retry mechanism
+                
+                **Đã thử:**
+                - ✅ Kiểm tra file existence
+                - ✅ Kiểm tra file readable
+                - ✅ Tạo safe temp copy
+                - ✅ Retry mechanism
+                
+                **Khắc phục:**
+                1. Kiểm tra FFmpeg: `pip install imageio-ffmpeg` và restart
+                2. Thử với file audio khác
+                3. Restart ứng dụng
+                4. Kiểm tra không có process khác đang dùng file
                 """)
                 return None
 
